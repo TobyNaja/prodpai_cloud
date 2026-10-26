@@ -109,27 +109,30 @@ aws sts get-caller-identity    # ต้องเห็น ARN ของ voclabs
 # S3 bucket เก็บ tfstate (ชื่อต้องไม่ซ้ำทั้งโลก)
 aws s3 mb s3://prodpai-tfstate-<ชื่อตัวเอง> --region us-east-1
 
-# S3 bucket เก็บข้อมูล dashboard — ตั้งใจไม่ให้ Terraform สร้าง
-# จะได้ไม่โดนลบตอน destroy แล้ว snapshot/incident ย้อนหลังยังอยู่
-aws s3 mb s3://prod-pai-logs --region us-east-1
-
-# ECR repo ของแอป (ชื่อต้องตรงกับ ec2.tf และทั้งสอง workflow)
+# ECR repo ของแอป (ชื่อเดียวกับ APP_ECR_REPOSITORY ใน .github/config.env)
 aws ecr create-repository --repository-name plodphai-todo-list --region us-east-1
-
-# ECR repo ของ dashboard (workflow สร้างให้เองถ้ายังไม่มี)
-aws ecr create-repository --repository-name prodpai_dashboard --region us-east-1
 ```
 
-> `Infra Setup` จะสร้าง `prod-pai-logs` ให้เองถ้ายังไม่มี แต่สร้างเองไว้ก่อนก็ได้
+แล้วแก้ `.github/config.env` ให้เป็นชื่อของบัญชีตัวเอง ไฟล์เดียวจบ
 
-## 3. เอา image แอปขึ้น ECR (ต้องมี `:latest` ก่อน apply)
+> bucket ข้อมูล dashboard (`DATA_BUCKET`) และ ECR ของ dashboard **Infra Setup สร้างให้เอง**
+> bucket ข้อมูลตั้งใจไม่ให้ Terraform สร้าง จะได้ไม่โดนลบตอน destroy แล้ว incident ย้อนหลังยังอยู่
 
-push โค้ดเข้า `main` ของ repo แอป → รอ CI ผ่านทุก job → ดู tag จาก step summary ของ run นั้น
+## 3. เอา image แอปขึ้น ECR ก่อน Infra Setup (ครั้งแรก)
+
+Infra Setup ต้องมี image แอปใน ECR แล้ว แต่ CI ของแอปก็ต้องมี ASG ถึงจะ rollout ได้ ลำดับจึงเป็น:
+
+1. push โค้ดเข้า `main` ของ repo แอป (หรือ Re-run CI)
+2. job **Build, scan and push image** ต้องเขียว → image `<sha>` และ `latest` เข้า ECR แล้ว
+3. job **Roll the new image into the ASG** จะขึ้น **warning** "ยังไม่มี ASG" แล้วข้าม — ปกติของรอบแรก ไม่ใช่ error
+4. ไปรัน Infra Setup ด้วย `image_tag=latest` (ข้อ 4)
 
 ```bash
 aws ecr describe-images --repository-name plodphai-todo-list \
   --query 'imageDetails[].imageTags' --output text
 ```
+
+ถ้ารัน Infra Setup ไปแล้วแต่ CI ยังขึ้น warning "ยังไม่มี ASG" แปลว่า secret ของสอง repo เป็นคนละบัญชี
 
 ## 4. Deploy
 

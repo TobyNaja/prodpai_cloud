@@ -87,13 +87,28 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # ถ้า image ที่ขอไม่มีจริง ASG จะปั้นเครื่องที่ pull ไม่ขึ้นมาทั้งชุด ตรวจก่อนดีกว่า
+      # แยกให้ชัดว่าขาดอะไร: ไม่มี repo / มี repo แต่ไม่มี tag / เรียก AWS ไม่ได้
       - name: Check application image exists in ECR
         run: |
-          if ! aws ecr describe-images --repository-name "$APP_ECR_REPOSITORY" \
-               --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
-            echo "::error::$APP_ECR_REPOSITORY:$IMAGE_TAG is not in ECR (wait for the app's CI to push it)"
+          next="push เข้า main ของ repo plodphai-todo-list (หรือ Re-run CI) ให้ job 'Build, scan and push image' ผ่าน แล้วกลับมารัน Infra Setup ใหม่ ตอนตั้งระบบครั้งแรก job rollout ของ CI จะข้ามเองเพราะยังไม่มี ASG"
+          if ! out=$(aws ecr describe-repositories --repository-names "$APP_ECR_REPOSITORY" 2>&1); then
+            if echo "$out" | grep -q RepositoryNotFoundException; then
+              echo "::error::ไม่มี ECR repository '$APP_ECR_REPOSITORY' ในบัญชีนี้ สร้างก่อน: aws ecr create-repository --repository-name $APP_ECR_REPOSITORY --region $AWS_REGION แล้ว $next"
+            else
+              echo "::error::เรียก ECR ไม่ได้ (secret หมดอายุหรือไม่มีสิทธิ์?): $out"
+            fi
             exit 1
           fi
+          if ! out=$(aws ecr describe-images --repository-name "$APP_ECR_REPOSITORY" \
+                       --image-ids imageTag="$IMAGE_TAG" 2>&1); then
+            if echo "$out" | grep -q ImageNotFoundException; then
+              echo "::error::มี repository '$APP_ECR_REPOSITORY' แล้ว แต่ยังไม่มี image tag '$IMAGE_TAG' $next"
+            else
+              echo "::error::เรียก ECR ไม่ได้: $out"
+            fi
+            exit 1
+          fi
+          echo "พบ $APP_ECR_REPOSITORY:$IMAGE_TAG ใน ECR"
 
       # apply รอบสองจะสร้าง builder ใหม่แล้ว "ลบ AMI ตัวที่ launch template ใช้อยู่"
       # ผลคือ ASG ปั้นเครื่องใหม่ไม่ได้อีกเลย อยากเปลี่ยนเป็น image ใหม่ให้ใช้ Launch Image แทน

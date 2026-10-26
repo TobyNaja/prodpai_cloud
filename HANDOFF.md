@@ -128,16 +128,22 @@ AWS Academy ให้ `us-east-1` อยู่แล้ว
 
 ---
 
-## 9. ลำดับทำครั้งแรก
+## 9. ลำดับทำครั้งแรก (บัญชีใหม่)
+
+ลำดับสำคัญ: Infra Setup ต้องมี image แอปใน ECR ก่อน แต่ CI ของแอปต้องมี ASG ถึงจะ rollout ได้
+จึงต้องให้ CI push image ก่อน (rollout จะข้ามเองเพราะยังไม่มี ASG) แล้วค่อย Infra Setup
 
 1. `git config --global core.autocrlf input` แล้ว fork + clone ทั้งสอง repo
-2. วาง AWS credentials ใน WSL แล้ว `aws sts get-caller-identity` ต้องเห็น ARN ของ voclabs
-3. สร้าง bucket + ECR repo (ข้อ 1)
-4. แก้ backend bucket ใน `terraform.tf` และชื่อ ECR ถ้าใช้ชื่ออื่น (ข้อ 2)
-5. ใส่ Secrets ทั้งสอง repo (ข้อ 4)
-6. push repo แอปขึ้น `main` → รอ CI ผ่านครบทุก job → เช็คว่ามี `latest` ใน ECR
+2. วาง AWS credentials แล้ว `aws sts get-caller-identity` ต้องเห็น ARN ของ voclabs
+3. สร้าง S3 state bucket และ ECR repo ของแอป (ข้อ 1) ส่วน bucket ข้อมูล dashboard และ ECR ของ dashboard Infra Setup สร้างให้
+4. แก้ `.github/config.env` ใน repo นี้ให้เป็นชื่อของบัญชีตัวเอง (ข้อ 2)
+5. ใส่ Secrets ทั้งสอง repo ให้เป็น**บัญชีเดียวกัน** (ข้อ 4)
+6. push repo แอปขึ้น `main` (หรือ Re-run CI) → job **Build, scan and push image** ต้องเขียว
+   job **Roll the new image into the ASG** จะขึ้น warning "ยังไม่มี ASG" แล้วข้าม — ปกติของรอบแรก
 7. Actions ของ repo นี้ → **Infra Setup** → Run workflow (`image_tag` = `latest`)
-8. เปิด `http://<alb>/` และ `http://<alb>/dashboard` จาก step summary
+8. เปิด `http://<alb>/` และ `http://<alb>/dashboard` จาก step summary แล้วกด Sync AWS
 9. จากนี้ push เข้า `main` ของ repo แอปได้เลย CI จะ push ขึ้น ECR แล้ว rollout ให้เอง
    (อยากย้อน tag เก่า → **Launch Image** ที่ repo นี้ ไม่ใช่ Infra Setup ซ้ำ)
 10. เลิกใช้แล้ว → **Destroy** → พิมพ์ `destroy` ยืนยัน
+
+ถ้าข้อ 6 rollout ขึ้น warning ทั้งที่รัน Infra Setup ไปแล้ว แปลว่า secret ของ repo แอปชี้คนละบัญชีกับ repo นี้
